@@ -6,6 +6,7 @@ Provides endpoints for current data, history, and manual agent triggers.
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from datetime import datetime
 import logging
 
@@ -13,6 +14,7 @@ from config import OPENROUTER_API_KEY
 from db_handler import get_current, get_history, insert_data
 from phase1_data import get_environment_data
 from agents.run_all_agent import run_all_agents
+from utils.serial_comm import get_arduino, connect_to_arduino, send_to_arduino
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,6 +29,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Arduino/SimulIDE connection state
+arduino_connected = False
+
+
+class SerialConnectRequest(BaseModel):
+    port: str = None
+
+
+class SerialSendRequest(BaseModel):
+    temperature: float
+    temp_status: str
+    fan_speed: str
+    brightness_pct: int
+    mood: str
+    hour: int
 
 
 @app.get("/")
@@ -75,7 +93,7 @@ def get_current_data():
         }
     
     # Format for frontend compatibility
-    return {
+    response = {
         "timestamp": data["timestamp"],
         "temperature": data["temperature"],
         "radiation": data["radiation"],
@@ -100,6 +118,22 @@ def get_current_data():
         "recommendation": data["recommendation"],
         "model_used": data["model_used"]
     }
+    
+    # Auto-send to SimulIDE if connected
+    if arduino_connected:
+        try:
+            send_to_arduino(
+                temperature=data["temperature"],
+                temp_status=data["temp_status"],
+                fan_speed=data["fan_speed"],
+                brightness_pct=data["brightness_pct"],
+                mood=data["mood"],
+                hour=data["hour"]
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send to SimulIDE: {e}")
+    
+    return response
 
 
 @app.get("/history")
@@ -155,13 +189,30 @@ def run_agents(input_date: str = None, input_hour: int = None):
         # Add timestamp and store
         result["timestamp"] = datetime.now().isoformat()
         insert_data(result)
-        
+
         logger.info("Agent run completed successfully")
+        
+        # Auto-send to SimulIDE if connected
+        if arduino_connected:
+            try:
+                send_to_arduino(
+                    temperature=result["temperature"],
+                    temp_status=result["temp_status"],
+                    fan_speed=result["fan_speed"],
+                    brightness_pct=result["brightness_pct"],
+                    mood=result["mood"],
+                    hour=result["hour"]
+                )
+                logger.info("Data sent to SimulIDE")
+            except Exception as e:
+                logger.warning(f"Failed to send to SimulIDE: {e}")
+        
         return {
             "status": "success",
             "input": {"date": input_date, "hour": input_hour},
             "environment": env_data,
-            "agents": result
+            "agents": result,
+            "simulide_sent": arduino_connected
         }
         
     except Exception as e:
@@ -180,12 +231,127 @@ def get_weather(date: str = None, hour: int = None):
             date = datetime.now().strftime("%Y-%m-%d")
         if hour is None:
             hour = datetime.now().hour
-            
+
         env_data = get_environment_data(date, hour)
         return env_data
     except Exception as e:
         logger.error(f"Weather fetch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SimulIDE / Arduino Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/simulide/ports")
+def list_serial_ports():
+    """List available serial ports for Arduino/SimulIDE connection."""
+    arduino = get_arduino()
+    return {"ports": arduino.list_ports()}
+
+
+@app.post("/simulide/connect")
+def connect_simulide(request: SerialConnectRequest = None):
+    """
+    Connect to Arduino/SimulIDE via serial port.
+    
+    Args:
+        port: COM port (e.g., 'COM3' on Windows). If None, auto-detects.
+    """
+    global arduino_connected
+    port = request.port if request else None
+    
+    arduino_connected = connect_to_arduino(port)
+    
+    return {
+        "connected": arduino_connected,
+        "port": get_arduino().port if arduino_connected else None
+    }
+
+
+@app.post("/simulide/disconnect")
+def disconnect_simulide():
+    """Disconnect from Arduino/SimulIDE."""
+    global arduino_connected
+    arduino = get_arduino()
+    arduino.disconnect()
+    arduino_connected = False
+    return {"status": "disconnected"}
+
+
+@app.post("/simulide/send")
+def send_to_simulide(data: SerialSendRequest):
+    """
+    Send environment data to Arduino/SimulIDE.
+    
+    Updates the virtual Arduino with:
+    - RGB LED (temperature status)
+    - White LED (light brightness)
+    - DC Motor (fan speed)
+    - LCD Display (environment data)
+    """
+    if not arduino_connected:
+        # Try to auto-connect
+        arduino_connected = connect_to_arduino()
+        if not arduino_connected:
+            raise HTTPException(
+                status_code=503,
+                detail="Not connected to Arduino/SimulIDE. Call /simulide/connect first."
+            )
+    
+    success = send_to_arduino(
+        temperature=data.temperature,
+        temp_status=data.temp_status,
+        fan_speed=data.fan_speed,
+        brightness_pct=data.brightness_pct,
+        mood=data.mood,
+        hour=data.hour
+    )
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send data to Arduino")
+    
+    return {
+        "status": "success",
+        "message": "Data sent to SimulIDE",
+        "data": {
+            "temperature": data.temperature,
+            "temp_status": data.temp_status,
+            "fan_speed": data.fan_speed,
+            "brightness_pct": data.brightness_pct,
+            "mood": data.mood,
+            "hour": data.hour
+        }
+    }
+
+
+@app.get("/simulide/status")
+def get_simulide_status():
+    """Get Arduino/SimulIDE connection status and current state."""
+    arduino = get_arduino()
+    return {
+        "connected": arduino_connected,
+        "port": arduino.port,
+        "status": arduino.get_status() if arduino_connected else {}
+    }
+
+
+@app.post("/simulide/reset")
+def reset_simulide():
+    """Reset Arduino/SimulIDE to default state."""
+    if not arduino_connected:
+        raise HTTPException(status_code=503, detail="Not connected to Arduino")
+    
+    arduino = get_arduino()
+    success = arduino.reset()
+    
+    return {
+        "status": "success" if success else "failed",
+        "message": "Arduino reset" if success else "Reset failed"
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @app.on_event("shutdown")

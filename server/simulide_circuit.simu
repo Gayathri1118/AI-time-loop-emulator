@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE SimulIDE>
+<simulide version="0.4" name="AI Time Loop Environment Emulator">
+  <!--
+    AI Time Loop Environment Emulator - SimulIDE Circuit
+    
+    This circuit simulates an Arduino-based environment controller that receives
+    data from the Python server via serial communication.
+    
+    Components:
+    - Arduino Uno (microcontroller)
+    - RGB LED (temperature status: Red=HOT, Green=NORMAL, Blue=COLD)
+    - White LED (light brightness control)
+    - DC Motor (fan speed control)
+    - LCD Display 16x2 (environment data display)
+    - Push Button (manual override)
+    - USB Serial (communication with Python server)
+    
+    Setup Instructions:
+    1. Open this file in SimulIDE (simulide.com)
+    2. Load the Arduino sketch: arduino/time_loop_controller/time_loop_controller.ino
+    3. Connect the USB Serial to your computer's COM port
+    4. Run the Python server: uvicorn api:app --reload
+    5. Connect via API: POST /simulide/connect
+  -->
+  
+  <properties>
+    <property name="canvasWidth" value="800"/>
+    <property name="canvasHeight" value="600"/>
+    <property name="gridSize" value="10"/>
+  </properties>
+  
+  <!-- Arduino Uno -->
+  <component type="Arduino" id="arduino1" x="200" y="200">
+    <property name="firmware" value=""/>
+    <property name="frequency" value="16000000"/>
+    <pins>
+      <pin id="D2" direction="out"/>
+      <pin id="D3" direction="out"/>
+      <pin id="D4" direction="out"/>
+      <pin id="D5" direction="out"/>
+      <pin id="D6" direction="out"/>
+      <pin id="D7" direction="out"/>
+      <pin id="D8" direction="out"/>
+      <pin id="D9" direction="out"/>
+      <pin id="D10" direction="out"/>
+      <pin id="D11" direction="out"/>
+      <pin id="D12" direction="out"/>
+      <pin id="D13" direction="out"/>
+      <pin id="A0" direction="in"/>
+      <pin id="GND" type="ground"/>
+      <pin id="5V" type="power"/>
+      <pin id="TX" direction="out"/>
+      <pin id="RX" direction="in"/>
+    </pins>
+  </component>
+  
+  <!-- USB Serial for communication with Python -->
+  <component type="UsbSerial" id="usbserial1" x="50" y="250">
+    <pins>
+      <pin id="TX" link="arduino1.RX"/>
+      <pin id="RX" link="arduino1.TX"/>
+      <pin id="GND" link="arduino1.GND"/>
+    </pins>
+  </component>
+  
+  <!-- RGB LED (Common Anode) - Temperature Status -->
+  <component type="LedRgb" id="rgbled1" x="400" y="100">
+    <property name="color" value="common_anode"/>
+    <pins>
+      <pin id="RED" link="arduino1.D9"/>
+      <pin id="GREEN" link="arduino1.D10"/>
+      <pin id="BLUE" link="arduino1.D6"/>
+      <pin id="VCC" type="power"/>
+    </pins>
+  </component>
+  
+  <!-- White LED - Light Control -->
+  <component type="Led" id="led1" x="400" y="200">
+    <property name="color" value="white"/>
+    <pins>
+      <pin id="A" link="arduino1.D7"/>
+      <pin id="K" type="ground"/>
+    </pins>
+  </component>
+  
+  <!-- DC Motor - Fan Control -->
+  <component type="DcMotor" id="motor1" x="400" y="300">
+    <property name="resistance" value="10"/>
+    <pins>
+      <pin id="+" link="arduino1.D8"/>
+      <pin id="-" type="ground"/>
+    </pins>
+  </component>
+  
+  <!-- LCD Display 16x2 -->
+  <component type="Lcd" id="lcd1" x="200" y="450">
+    <property name="columns" value="16"/>
+    <property name="rows" value="2"/>
+    <pins>
+      <pin id="RS" link="arduino1.D12"/>
+      <pin id="EN" link="arduino1.D11"/>
+      <pin id="D4" link="arduino1.D5"/>
+      <pin id="D5" link="arduino1.D4"/>
+      <pin id="D6" link="arduino1.D3"/>
+      <pin id="D7" link="arduino1.D2"/>
+      <pin id="VSS" type="ground"/>
+      <pin id="VDD" type="power"/>
+    </pins>
+  </component>
+  
+  <!-- Push Button - Manual Override -->
+  <component type="Push" id="button1" x="500" y="400">
+    <property name="label" value="Override"/>
+    <pins>
+      <pin id="1" link="arduino1.D13"/>
+      <pin id="2" type="ground"/>
+    </pins>
+  </component>
+  
+  <!-- Ground connections -->
+  <component type="Ground" id="gnd1" x="450" y="250">
+    <pins>
+      <pin id="GND" link="led1.K"/>
+    </pins>
+  </component>
+  
+  <component type="Ground" id="gnd2" x="450" y="350">
+    <pins>
+      <pin id="GND" link="motor1.-"/>
+    </pins>
+  </component>
+  
+  <!-- Power connections -->
+  <component type="Vcc" id="vcc1" x="450" y="50">
+    <pins>
+      <pin id="VCC" link="rgbled1.VCC"/>
+    </pins>
+  </component>
+  
+  <component type="Vcc" id="vcc2" x="250" y="400">
+    <pins>
+      <pin id="VCC" link="lcd1.VDD"/>
+    </pins>
+  </component>
+  
+  <!-- Labels for clarity -->
+  <component type="Label" id="label1" x="350" y="90">
+    <property name="text" value="RGB LED (Temp)"/>
+  </component>
+  
+  <component type="Label" id="label2" x="350" y="190">
+    <property name="text" value="White LED (Light)"/>
+  </component>
+  
+  <component type="Label" id="label3" x="350" y="290">
+    <property name="text" value="DC Motor (Fan)"/>
+  </component>
+  
+  <component type="Label" id="label4" x="200" y="430">
+    <property name="text" value="LCD 16x2 Display"/>
+  </component>
+  
+</simulide>
