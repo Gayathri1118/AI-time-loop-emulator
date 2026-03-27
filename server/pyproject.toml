@@ -1,0 +1,31 @@
+[project]
+name = "ai-time-loop-emulator"
+version = "1.0.0"
+description = "AI-powered environment emulator with temperature, lighting, and scene analysis agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn>=0.34.2",
+    "requests>=2.32.3",
+    "pydantic>=2.11.3",
+    "httpx>=0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.25.3",
+]
+
+[project.scripts]
+run-emulator = "main:main"
+
+[tool.setuptools.packages.find]
+include = ["agents*", "utils*"]
+
+[tool.uvicorn]
+default = "api:app"
+host = "0.0.0.0"
+port = 8000
+reload = true
